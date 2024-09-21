@@ -1,0 +1,18 @@
+{
+  "name": "essence-bot",
+  "version": "0.0.1",
+  "license": "OSL-3.0",
+  "private": true,
+  "workspaces": [
+    "discord-bot",
+    "dashboard",
+    "modules/*"
+  ],
+  "scripts": {
+    "build:dashboard": "bun run --cwd dashboard build",
+    "dev:discord-bot": "bun run --cwd discord-bot dev",
+    "dev:dashboard": "bun run --cwd dashboard dev",
+    "start:discord-bot": "bun run --cwd discord-bot start",
+    "start:dashboard": "bun run --cwd dashboard start"
+  }
+}

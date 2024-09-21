@@ -1,0 +1,29 @@
+{
+  "name": "essence-bot-dashboard",
+  "version": "0.0.1",
+  "private": true,
+  "license": "OSL-3.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vinxi dev",
+    "build": "vinxi build",
+    "start": "vinxi start",
+    "version": "vinxi version"
+  },
+  "dependencies": {
+    "@auth/core": "0.29.0",
+    "@solid-mediakit/auth": "2.0.11",
+    "@solidjs/meta": "0.29.3",
+    "@solidjs/router": "0.13.2",
+    "@solidjs/start": "0.7.7",
+    "solid-js": "1.8.17",
+    "vinxi": "0.3.11"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.0.0-alpha.14",
+    "tailwindcss": "4.0.0-alpha.14"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}

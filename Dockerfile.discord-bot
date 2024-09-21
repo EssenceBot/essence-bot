@@ -1,0 +1,18 @@
+FROM oven/bun:1-alpine
+
+WORKDIR /app
+
+COPY package.json /app/
+
+COPY /discord-bot/package.json /app/discord-bot/
+
+RUN mkdir /app/modules
+COPY dashboard/package.json /app/dashboard/
+
+RUN bun install --production
+
+COPY discord-bot /app/discord-bot
+
+EXPOSE 8080
+
+CMD [ "bun", "run", "start:discord-bot" ]

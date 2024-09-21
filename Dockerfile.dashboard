@@ -1,0 +1,32 @@
+FROM oven/bun:1-alpine as build
+
+WORKDIR /tmp/app
+
+COPY dashboard/package.json /tmp/app/
+
+RUN bun install
+
+COPY dashboard/ /tmp/app
+
+RUN bun run build
+
+
+
+FROM oven/bun:1-alpine as prod
+
+WORKDIR /app
+
+COPY package.json /app
+
+COPY --from=build /tmp/app/package.json /app/dashboard
+
+RUN mkdir /app/modules
+COPY discord-bot/package.json /app/discord-bot/
+
+RUN bun install --production
+
+COPY --from=build /tmp/app/.output /app/dashboard/.output
+
+EXPOSE 80
+
+CMD [ "bun", "run",  "start:dashboard"]
