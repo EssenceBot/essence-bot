@@ -1,0 +1,27 @@
+# dependencies
+/node_modules
+
+# IDEs and editors
+.vscode
+/.idea
+.project
+.classpath
+*.launch
+.settings/
+
+# Temp
+gitignore
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Module files
+modules/*
+!modules/.gitkeep
+
+# Bun lock file
+bun.lockb
+
+/config/*
+!/config/.gitkeep
