@@ -11,16 +11,18 @@
   },
   "dependencies": {
     "@discordjs/rest": "2.4.0",
-    "discord.js": "14.16.2",
-    "typescript": "5.6.2",
+    "discord.js": "14.16.3",
+    "typescript": "5.6.3",
     "app-root-path": "3.1.0",
     "jsonc-simple-parser": "3.0.0",
-    "surrealdb.node": "1.0.0-beta.1",
+    "surrealdb": "1.0.6",
+    "@surrealdb/node": "1.0.0-beta.2",
     "ioredis": "5.4.1",
-    "elysia": "1.1.13"
+    "elysia": "1.1.13",
+    "chalk": "5.3.0"
   },
   "devDependencies": {
-    "@types/bun": "1.1.9"
+    "@types/bun": "1.1.13"
   },
   "overrides": {
     "discord-api-types": "0.37.100"

@@ -1,17 +1,17 @@
 import { bot } from "../index";
 import { SlashCommandBuilder } from "@discordjs/builders";
-import type { CommandInteraction } from "discord.js";
+import type { ChatInputCommandInteraction, Message } from "discord.js";
 import { Events } from "discord.js";
 import { commandsList } from "../index";
 
 export async function createSlashCommand(
   slashCommandHandler: (slashCommand: SlashCommandBuilder) => void,
-  interactionHandler: (interaction: CommandInteraction) => void
+  interactionHandler: (interaction: ChatInputCommandInteraction) => void
 ) {
   const slashCommand = new SlashCommandBuilder();
   slashCommandHandler(slashCommand);
   bot.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isCommand()) return;
+    if (!interaction.isChatInputCommand()) return;
     if (interaction.commandName === slashCommand.name) {
       interactionHandler(interaction);
     }
@@ -21,7 +21,7 @@ export async function createSlashCommand(
 
 export async function createChannelMessageListener(
   channelId: string,
-  messageHandler: (message: any) => void
+  messageHandler: (message: Message) => void
 ) {
   bot.on(Events.MessageCreate, async (message) => {
     if (message.channelId === channelId) {
