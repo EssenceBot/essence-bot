@@ -30,6 +30,17 @@ export async function createChannelMessageListener(
   });
 }
 
+export async function removeChannelMessageListener(
+  channelId: string,
+  messageHandler: (message: Message) => void
+) {
+  bot.off(Events.MessageCreate, async (message) => {
+    if (message.channelId === channelId) {
+      messageHandler(message);
+    }
+  });
+}
+
 export function getClient() {
   return bot;
 }
