@@ -1,5 +1,5 @@
 import { Client, Events, GatewayIntentBits } from "discord.js";
-import { initialModuleImport } from "./lib/modules";
+import { initialModuleImport, lateModuleImport } from "./lib/modules";
 import { connect } from "./api/db";
 import type { RESTPostAPIChatInputApplicationCommandsJSONBody } from "discord-api-types/v10";
 import type Surreal from "surrealdb";
@@ -36,6 +36,8 @@ console.log(
 );
 
 bot.once(Events.ClientReady, async (_readyClient) => {
+  console.log(`${chalk.green("[Core]")} Importing late module functions...`);
+  await lateModuleImport();
   console.log(`${chalk.green("[Core]")} Importing commands...`);
   bot.application?.commands.set(commandsList);
   console.log(
