@@ -1,8 +1,5 @@
 FROM oven/bun:1-alpine
 
-# Create non-root user (reuse existing group 1000 if it exists)
-RUN adduser -u 1000 -D -s /bin/sh essence
-
 WORKDIR /app
 
 COPY package.json /app/
@@ -16,10 +13,10 @@ RUN bun install --production
 
 COPY discord-bot /app/discord-bot
 
-# Change ownership to non-root user
-RUN chown -R essence:essence /app
+# Change ownership to user 1000 (bun user that already exists)
+RUN chown -R 1000:1000 /app
 
-USER essence
+USER 1000
 
 EXPOSE 8080
 
