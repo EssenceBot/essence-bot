@@ -73,12 +73,19 @@ export async function initialModuleImport(): Promise<string[]> {
       continue;
     }
     try {
+      botLog("Core", `Attempting to import module ${moduleCodeName} from ${modulePath}`);
       const importResult = await importModule(moduleCodeName, modulePath);
       if (importResult === true) {
         loadedModules.push(moduleCodeName);
+        botLog("Core", `Successfully loaded module ${moduleCodeName}`);
+      } else {
+        botLog("Core", `Module ${moduleCodeName} import returned false`, "warn");
       }
     } catch (error) {
-      botLog("Core", `Error importing module ${moduleCodeName}.`, "error");
+      botLog("Core", `Error importing module ${moduleCodeName}: ${error instanceof Error ? error.message : String(error)}`, "error");
+      if (error instanceof Error && error.stack) {
+        botLog("Core", `Stack trace: ${error.stack}`, "error");
+      }
     }
   }
   return loadedModules;
@@ -99,9 +106,13 @@ export async function lateModuleImport(): Promise<string[]> {
       continue;
     }
     try {
+      botLog("Core", `Attempting late import for module ${moduleCodeName}`);
       await importModule(moduleCodeName, modulePath, true);
     } catch (error) {
-      botLog("Core", `Error importing module ${moduleCodeName}.`, "error");
+      botLog("Core", `Error in late import for module ${moduleCodeName}: ${error instanceof Error ? error.message : String(error)}`, "error");
+      if (error instanceof Error && error.stack) {
+        botLog("Core", `Stack trace: ${error.stack}`, "error");
+      }
     }
   }
   return loadedModules;
@@ -114,11 +125,13 @@ async function importModule(
   modulePath: string,
   late?: boolean
 ): Promise<boolean> {
+  botLog("Core", `Validating module ${moduleCodeName}...`);
   const validationResults = await validateModule(moduleCodeName, modulePath);
   if (validationResults.pass === false) {
-    botLog("Core", `Module ${moduleCodeName} is invalid, skipping...`, "error");
+    botLog("Core", `Module ${moduleCodeName} validation failed, skipping...`, "error");
     return false;
   }
+  botLog("Core", `Module ${moduleCodeName} validation passed (version: ${validationResults.moduleVersion})`);
 
   const moduleImport = await import(`${modulePath}/index`);
   if (typeof moduleImport.discordBotInit === "function") {
@@ -170,6 +183,7 @@ async function importModule(
 
     if (!late) {
       try {
+        botLog("Core", `Calling discordBotInit for module ${moduleCodeName}...`);
         await moduleImport.discordBotInit();
 
         // Register module schema if provided
@@ -184,16 +198,23 @@ async function importModule(
           }
         }
       } catch (error) {
-        botLog("Core", `Module ${moduleCodeName} failed to load:`, "error");
+        botLog("Core", `Module ${moduleCodeName} discordBotInit failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+        if (error instanceof Error && error.stack) {
+          botLog("Core", `Stack trace: ${error.stack}`, "error");
+        }
         return false;
       }
     } else {
       if (typeof moduleImport.lateDiscordBotInit === "function") {
         try {
+          botLog("Core", `Calling lateDiscordBotInit for module ${moduleCodeName}...`);
           await moduleImport.lateDiscordBotInit();
           return false;
         } catch (error) {
-          botLog("Core", `Module ${moduleCodeName} failed to load:`, "error");
+          botLog("Core", `Module ${moduleCodeName} lateDiscordBotInit failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+          if (error instanceof Error && error.stack) {
+            botLog("Core", `Stack trace: ${error.stack}`, "error");
+          }
           return false;
         }
       }
@@ -228,13 +249,12 @@ async function validateModule(
   modulePath: string
 ): Promise<{ pass: boolean; moduleVersion?: string }> {
   for (const file of requiredFiles) {
-    try {
-      const filePath = `${modulePath}/${file}`;
-      await Bun.file(filePath).exists();
-    } catch (error) {
+    const filePath = `${modulePath}/${file}`;
+    const fileExists = await Bun.file(filePath).exists();
+    if (!fileExists) {
       botLog(
         "Core",
-        `Module ${moduleCodeName} is missing file ${file}`,
+        `Module ${moduleCodeName} is missing required file: ${file}`,
         "error"
       );
       return { pass: false };
