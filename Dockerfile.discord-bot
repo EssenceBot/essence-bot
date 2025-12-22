@@ -1,8 +1,7 @@
 FROM oven/bun:1-alpine
 
-# Create non-root user
-RUN addgroup -g 1000 essence && \
-    adduser -u 1000 -G essence -s /bin/sh -D essence
+# Create non-root user (reuse existing group 1000 if it exists)
+RUN adduser -u 1000 -D -s /bin/sh essence
 
 WORKDIR /app
 
