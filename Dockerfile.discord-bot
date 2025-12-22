@@ -9,9 +9,11 @@ COPY /discord-bot/package.json /app/discord-bot/
 RUN mkdir /app/modules
 COPY dashboard/package.json /app/dashboard/
 
-RUN bun install --production
-
 COPY discord-bot /app/discord-bot
+
+# Copy entrypoint script
+COPY discord-bot/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Change ownership to user 1000 (bun user that already exists)
 RUN chown -R 1000:1000 /app
@@ -20,4 +22,4 @@ USER 1000
 
 EXPOSE 8080
 
-CMD [ "bun", "run", "start:discord-bot" ]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
