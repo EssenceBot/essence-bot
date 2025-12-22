@@ -133,54 +133,54 @@ async function importModule(
   }
   botLog("Core", `Module ${moduleCodeName} validation passed (version: ${validationResults.moduleVersion})`);
 
-  const moduleImport = await import(`${modulePath}/index`);
-  if (typeof moduleImport.discordBotInit === "function") {
-    const installedModuleVersion = await Bun.file(
-      `${modulePath}/${requiredFiles[2]}`
-    )
-      .text()
-      .then((m) => JSON.parse(m).version);
+  // Check if module needs installation BEFORE importing
+  const installedModuleVersion = validationResults.moduleVersion;
+  const shouldInstall =
+    !(moduleCodeName in modulesConf.installedModules) ||
+    modulesConf.installedModules[moduleCodeName] != installedModuleVersion;
 
-    const shouldInstall =
-      !(moduleCodeName in modulesConf.installedModules) ||
-      modulesConf.installedModules[moduleCodeName] != installedModuleVersion;
+  if (shouldInstall) {
+    botLog(
+      "Core",
+      `Module ${moduleCodeName} is not installed or version has changed, installing dependencies...`
+    );
+    await $`bun install`.cwd(modulePath);
+    botLog("Core", `Dependencies installed for module ${moduleCodeName}`);
 
-    if (shouldInstall) {
-      botLog(
-        "Core",
-        `Module ${moduleCodeName} is not installed or version has changed, installing...`
+    // Handle database operations if database is enabled and module requires it
+    if (isDatabaseEnabled()) {
+      const migrationRunner = new ModuleMigrationRunner();
+      const requiresDb = await migrationRunner.checkModuleRequiresDatabase(
+        modulePath
       );
-      await $`bun install`.cwd(modulePath);
 
-      // Handle database operations if database is enabled and module requires it
-      if (isDatabaseEnabled()) {
-        const migrationRunner = new ModuleMigrationRunner();
-        const requiresDb = await migrationRunner.checkModuleRequiresDatabase(
-          modulePath
+      if (requiresDb) {
+        botLog(
+          "Core",
+          `Module ${moduleCodeName} requires database, running migrations...`
         );
-
-        if (requiresDb) {
+        try {
+          await migrationRunner.runModuleMigrations(
+            moduleCodeName,
+            modulePath
+          );
+        } catch (error) {
           botLog(
             "Core",
-            `Module ${moduleCodeName} requires database, running migrations...`
+            `Failed to run database migrations for module ${moduleCodeName}: ${error}`,
+            "error"
           );
-          try {
-            await migrationRunner.runModuleMigrations(
-              moduleCodeName,
-              modulePath
-            );
-          } catch (error) {
-            botLog(
-              "Core",
-              `Failed to run database migrations for module ${moduleCodeName}: ${error}`,
-              "error"
-            );
-            return false;
-          }
+          return false;
         }
       }
     }
+  }
 
+  // Import the module AFTER dependencies are installed
+  botLog("Core", `Importing module code for ${moduleCodeName}...`);
+  const moduleImport = await import(`${modulePath}/index`);
+  
+  if (typeof moduleImport.discordBotInit === "function") {
     if (!late) {
       try {
         botLog("Core", `Calling discordBotInit for module ${moduleCodeName}...`);
