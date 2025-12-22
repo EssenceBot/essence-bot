@@ -1,8 +1,13 @@
-import { bot } from "../index";
+import { bot, commandsList } from "~/index";
 import { SlashCommandBuilder } from "@discordjs/builders";
 import type { ChatInputCommandInteraction, Message } from "discord.js";
 import { Events } from "discord.js";
-import { commandsList } from "../index";
+import {
+  getDatabase,
+  isDatabaseEnabled,
+  registerModuleSchema,
+} from "~/lib/database/index";
+import type { DatabaseSchema } from "~/types/types";
 
 export async function createSlashCommand(
   slashCommandHandler: (slashCommand: SlashCommandBuilder) => void,
@@ -43,4 +48,22 @@ export async function removeChannelMessageListener(
 
 export function getClient() {
   return bot;
+}
+
+// Database API functions
+export function getDatabaseClient() {
+  if (!isDatabaseEnabled()) {
+    throw new Error(
+      "Database is not enabled. Please configure database environment variables."
+    );
+  }
+  return getDatabase();
+}
+
+export function isDatabaseAvailable(): boolean {
+  return isDatabaseEnabled();
+}
+
+export function registerSchema(moduleName: string, schema: DatabaseSchema) {
+  registerModuleSchema(moduleName, schema);
 }

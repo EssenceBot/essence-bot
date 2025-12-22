@@ -1,19 +1,30 @@
 import appRoot from "app-root-path";
-import { readdir } from "node:fs/promises";
+import { readdir } from "fs/promises";
 import { $ } from "bun";
-import JSONC from "jsonc-simple-parser";
-import { loadedModules } from "../index";
+import toml from "smol-toml";
+import { loadedModules } from "~/index";
+import { type ModuleManifest, type ModuleDatabaseExports } from "~/types/types";
+import botLog from "~/lib/log";
+import { isDatabaseEnabled, registerModuleSchema } from "~/lib/database/index";
+import { ModuleMigrationRunner } from "~/lib/database/migrations";
 
-type ModuleManifest = {
-  name: string;
-  fullName: string;
-  description: string;
-  author: string;
-  dependencies?: {
-    required: Record<string, string>;
-    optional?: Record<string, string>;
-  };
-};
+function isModuleManifest(obj: any): obj is ModuleManifest {
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.name === "string" &&
+    typeof obj.fullName === "string" &&
+    typeof obj.description === "string" &&
+    typeof obj.author === "string" &&
+    (obj.dependencies === undefined ||
+      (typeof obj.dependencies === "object" &&
+        obj.dependencies !== null &&
+        (!("required" in obj.dependencies) ||
+          typeof obj.dependencies.required === "object") &&
+        (!("optional" in obj.dependencies) ||
+          typeof obj.dependencies.optional === "object")))
+  );
+}
 
 const modulesDirs = await readdir(`${appRoot}/modules`, {
   withFileTypes: true,
@@ -25,24 +36,40 @@ const modulesDirs = await readdir(`${appRoot}/modules`, {
     : null
 );
 
-if ((await Bun.file(`${appRoot}/config/modules.json`).exists()) === false) {
+if ((await Bun.file(`${appRoot}/config/modules.toml`).exists()) === false) {
   await Bun.write(
-    `${appRoot}/config/modules.json`,
-    JSON.stringify({ disabledModules: {}, installedModules: {} }, null, 4)
+    `${appRoot}/config/modules.toml`,
+    `disabledModules = []\n\n[installedModules]\n`
   );
 }
 
-const modulesConf = await Bun.file(`${appRoot}/config/modules.json`).json();
+const rawModulesConf = await Bun.file(`${appRoot}/config/modules.toml`)
+  .text()
+  .then((m) => toml.parse(m));
+const modulesConf = {
+  disabledModules: Array.isArray(rawModulesConf.disabledModules)
+    ? (rawModulesConf.disabledModules as string[])
+    : [],
+  installedModules:
+    rawModulesConf.installedModules &&
+    typeof rawModulesConf.installedModules === "object" &&
+    !Array.isArray(rawModulesConf.installedModules)
+      ? (rawModulesConf.installedModules as Record<string, string>)
+      : {},
+};
 
 export async function initialModuleImport(): Promise<string[]> {
   if (!modulesDirs) {
-    console.log("No modules found");
+    botLog("Core", "No modules found");
     return [];
   }
   for (const modulePath of modulesDirs) {
     const moduleCodeName = modulePath.split("/").pop() as string;
-    if (modulesConf.disabled && modulesConf.disabled.includes(moduleCodeName)) {
-      console.log(`Module ${moduleCodeName} is disabled, skipping...`);
+    if (
+      modulesConf.disabledModules &&
+      modulesConf.disabledModules.includes(moduleCodeName)
+    ) {
+      botLog("Core", `Module ${moduleCodeName} is disabled, skipping...`);
       continue;
     }
     try {
@@ -51,7 +78,7 @@ export async function initialModuleImport(): Promise<string[]> {
         loadedModules.push(moduleCodeName);
       }
     } catch (error) {
-      console.error(`Error importing module ${moduleCodeName}.`, error);
+      botLog("Core", `Error importing module ${moduleCodeName}.`, "error");
     }
   }
   return loadedModules;
@@ -59,25 +86,28 @@ export async function initialModuleImport(): Promise<string[]> {
 
 export async function lateModuleImport(): Promise<string[]> {
   if (!modulesDirs) {
-    console.log("No modules found");
+    botLog("Core", "No modules found");
     return [];
   }
   for (const modulePath of modulesDirs) {
     const moduleCodeName = modulePath.split("/").pop() as string;
-    if (modulesConf.disabled && modulesConf.disabled.includes(moduleCodeName)) {
-      console.log(`Module ${moduleCodeName} is disabled, skipping...`);
+    if (
+      modulesConf.disabledModules &&
+      modulesConf.disabledModules.includes(moduleCodeName)
+    ) {
+      botLog("Core", `Module ${moduleCodeName} is disabled, skipping...`);
       continue;
     }
     try {
       await importModule(moduleCodeName, modulePath, true);
     } catch (error) {
-      console.error(`Error importing module ${moduleCodeName}.`, error);
+      botLog("Core", `Error importing module ${moduleCodeName}.`, "error");
     }
   }
   return loadedModules;
 }
 
-const requiredFiles = ["index.ts", "manifest.jsonc", "package.json"];
+const requiredFiles = ["index.ts", "manifest.toml", "package.json"];
 
 async function importModule(
   moduleCodeName: string,
@@ -86,31 +116,75 @@ async function importModule(
 ): Promise<boolean> {
   const validationResults = await validateModule(moduleCodeName, modulePath);
   if (validationResults.pass === false) {
-    console.error(`Module ${moduleCodeName} is invalid, skipping...`);
+    botLog("Core", `Module ${moduleCodeName} is invalid, skipping...`, "error");
     return false;
   }
+
   const moduleImport = await import(`${modulePath}/index`);
   if (typeof moduleImport.discordBotInit === "function") {
     const installedModuleVersion = await Bun.file(
       `${modulePath}/${requiredFiles[2]}`
     )
       .text()
-      .then((m) => JSONC.parse(m).version);
+      .then((m) => JSON.parse(m).version);
 
-    if (
+    const shouldInstall =
       !(moduleCodeName in modulesConf.installedModules) ||
-      modulesConf.installedModules[moduleCodeName] != installedModuleVersion
-    ) {
-      console.log(
+      modulesConf.installedModules[moduleCodeName] != installedModuleVersion;
+
+    if (shouldInstall) {
+      botLog(
+        "Core",
         `Module ${moduleCodeName} is not installed or version has changed, installing...`
       );
       await $`bun install`.cwd(modulePath);
+
+      // Handle database operations if database is enabled and module requires it
+      if (isDatabaseEnabled()) {
+        const migrationRunner = new ModuleMigrationRunner();
+        const requiresDb = await migrationRunner.checkModuleRequiresDatabase(
+          modulePath
+        );
+
+        if (requiresDb) {
+          botLog(
+            "Core",
+            `Module ${moduleCodeName} requires database, running migrations...`
+          );
+          try {
+            await migrationRunner.runModuleMigrations(
+              moduleCodeName,
+              modulePath
+            );
+          } catch (error) {
+            botLog(
+              "Core",
+              `Failed to run database migrations for module ${moduleCodeName}: ${error}`,
+              "error"
+            );
+            return false;
+          }
+        }
+      }
     }
+
     if (!late) {
       try {
         await moduleImport.discordBotInit();
+
+        // Register module schema if provided
+        if (isDatabaseEnabled() && moduleImport.database) {
+          const dbExports = moduleImport.database as ModuleDatabaseExports;
+          if (dbExports.schema) {
+            botLog(
+              "Core",
+              `Registering database schema for module ${moduleCodeName}`
+            );
+            registerModuleSchema(moduleCodeName, dbExports.schema);
+          }
+        }
       } catch (error) {
-        console.error(`Module ${moduleCodeName} failed to load:`, error);
+        botLog("Core", `Module ${moduleCodeName} failed to load:`, "error");
         return false;
       }
     } else {
@@ -119,22 +193,32 @@ async function importModule(
           await moduleImport.lateDiscordBotInit();
           return false;
         } catch (error) {
-          console.error(`Module ${moduleCodeName} failed to load:`, error);
+          botLog("Core", `Module ${moduleCodeName} failed to load:`, "error");
           return false;
         }
       }
     }
 
     modulesConf.installedModules[moduleCodeName] =
-      validationResults.moduleVersion;
-    await Bun.write(
-      `${appRoot}/config/modules.json`,
-      JSON.stringify(modulesConf, null, 4)
-    );
+      validationResults.moduleVersion ?? "";
+    // Write TOML config back
+    const tomlString = [
+      `disabledModules = [${modulesConf.disabledModules
+        .map((m) => `"${m}"`)
+        .join(", ")}]`,
+      "",
+      `[installedModules]`,
+      ...Object.entries(modulesConf.installedModules).map(
+        ([k, v]) => `"${k}" = "${v}"`
+      ),
+    ].join("\n");
+    await Bun.write(`${appRoot}/config/modules.toml`, tomlString);
     return true;
   }
-  console.error(
-    `Module ${moduleCodeName} is missing export 'discordBotInit' in index file`
+  botLog(
+    "Core",
+    `Module ${moduleCodeName} is missing export 'discordBotInit' in index file`,
+    "error"
   );
   return false;
 }
@@ -148,7 +232,11 @@ async function validateModule(
       const filePath = `${modulePath}/${file}`;
       await Bun.file(filePath).exists();
     } catch (error) {
-      console.error(`Module ${moduleCodeName} is missing file ${file}`);
+      botLog(
+        "Core",
+        `Module ${moduleCodeName} is missing file ${file}`,
+        "error"
+      );
       return { pass: false };
     }
   }
@@ -156,54 +244,14 @@ async function validateModule(
     .json()
     .then((p) => p.version);
   const manifest = Bun.file(`${modulePath}/${requiredFiles[1]}`);
-  const manifestData: ModuleManifest = await manifest
-    .text()
-    .then((m) => JSONC.parse(m));
-  if (typeof manifestData.name !== "string") {
-    console.error(
-      `Module ${moduleCodeName} is missing field 'name' or isn't string in ${requiredFiles[1]}`
+  const manifestData = await manifest.text().then((m) => toml.parse(m));
+  if (!isModuleManifest(manifestData)) {
+    botLog(
+      "Core",
+      `Module ${moduleCodeName} manifest is invalid or missing required fields in ${requiredFiles[1]}`,
+      "error"
     );
     return { pass: false };
-  }
-  if (typeof manifestData.fullName !== "string") {
-    console.error(
-      `Module ${moduleCodeName} is missing field 'fullName' or isn't string in ${requiredFiles[1]}`
-    );
-    return { pass: false };
-  }
-  if (typeof manifestData.description !== "string") {
-    console.error(
-      `Module ${moduleCodeName} is missing field 'description' or isn't string in ${requiredFiles[1]}`
-    );
-    return { pass: false };
-  }
-  if (typeof manifestData.author !== "string") {
-    console.error(
-      `Module ${moduleCodeName} is missing field 'author' or isn't string in ${requiredFiles[1]}`
-    );
-    return { pass: false };
-  }
-  if (manifestData.dependencies) {
-    if (manifestData.dependencies.required) {
-      console.error(
-        `Module ${moduleCodeName} have field 'dependencies' present but field 'required' is missing in ${requiredFiles[1]}`
-      );
-      return { pass: false };
-    } else if (typeof manifestData.dependencies.required !== "object") {
-      console.error(
-        `Module ${moduleCodeName} have field 'dependencies' present but field 'required' isn't an objectn in ${requiredFiles[1]}`
-      );
-      return { pass: false };
-    }
-    if (
-      manifestData.dependencies.optional &&
-      typeof manifestData.dependencies.optional !== "object"
-    ) {
-      console.error(
-        `Module ${moduleCodeName} have field 'dependencies' and field 'optional' present but field 'optional' isn't an object in ${requiredFiles[1]}`
-      );
-      return { pass: false };
-    }
   }
   return { pass: true, moduleVersion };
 }

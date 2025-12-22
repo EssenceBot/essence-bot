@@ -9,9 +9,6 @@
 *.launch
 .settings/
 
-# Temp
-gitignore
-
 # System Files
 .DS_Store
 Thumbs.db
@@ -22,6 +19,3 @@ modules/*
 
 # Bun lock file
 bun.lockb
-
-/config/*
-!/config/.gitkeep
