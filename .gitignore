@@ -19,3 +19,6 @@ modules/*
 
 # Bun lock file
 bun.lockb
+
+# Config files
+config/*

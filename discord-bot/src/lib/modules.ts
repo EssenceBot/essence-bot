@@ -8,6 +8,15 @@ import botLog from "~/lib/log";
 import { isDatabaseEnabled, registerModuleSchema } from "~/lib/database/index";
 import { ModuleMigrationRunner } from "~/lib/database/migrations";
 
+/**
+ * Check if DEVELOPMENT mode is enabled via environment variable
+ * Accepts: "1", "true", "yes" (case-insensitive)
+ */
+function isDevelopmentMode(): boolean {
+  const devValue = process.env.DEVELOPMENT?.toLowerCase().trim();
+  return devValue === "1" || devValue === "true" || devValue === "yes";
+}
+
 function isModuleManifest(obj: any): obj is ModuleManifest {
   return (
     obj &&
@@ -135,15 +144,26 @@ async function importModule(
 
   // Check if module needs installation BEFORE importing
   const installedModuleVersion = validationResults.moduleVersion;
+  const isDevMode = isDevelopmentMode();
+  
+  // Force install if in development mode OR if version has changed
   const shouldInstall =
+    isDevMode ||
     !(moduleCodeName in modulesConf.installedModules) ||
     modulesConf.installedModules[moduleCodeName] != installedModuleVersion;
 
   if (shouldInstall) {
-    botLog(
-      "Core",
-      `Module ${moduleCodeName} is not installed or version has changed, installing dependencies...`
-    );
+    if (isDevMode) {
+      botLog(
+        "Core",
+        `DEVELOPMENT mode enabled - forcing dependency installation for module ${moduleCodeName}...`
+      );
+    } else {
+      botLog(
+        "Core",
+        `Module ${moduleCodeName} is not installed or version has changed, installing dependencies...`
+      );
+    }
     await $`bun install`.cwd(modulePath);
     botLog("Core", `Dependencies installed for module ${moduleCodeName}`);
 

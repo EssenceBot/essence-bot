@@ -1,7 +1,0 @@
-disabledModules = []
-
-[installedModules]
-"dice-roller-module" = "1.0.0"
-"example-database-module" = "1.0.0"
-"music" = "1.0.0"
-"generator-wymowek" = "1.0.1"

@@ -5,6 +5,15 @@ import { getDatabase } from "~/lib/database/index";
 import botLog from "~/lib/log";
 import toml from "smol-toml";
 
+/**
+ * Check if DEVELOPMENT mode is enabled via environment variable
+ * Accepts: "1", "true", "yes" (case-insensitive)
+ */
+function isDevelopmentMode(): boolean {
+  const devValue = process.env.DEVELOPMENT?.toLowerCase().trim();
+  return devValue === "1" || devValue === "true" || devValue === "yes";
+}
+
 export class ModuleMigrationRunner {
   private db = getDatabase();
 
@@ -89,10 +98,13 @@ export class ModuleMigrationRunner {
         return;
       }
 
+      const isDevMode = isDevelopmentMode();
       const appliedMigrations = await this.getAppliedMigrations(moduleCodeName);
-      const pendingMigrations = migrationFiles.filter(
-        (file) => !appliedMigrations.includes(file)
-      );
+      
+      // In development mode, re-run all migrations
+      const pendingMigrations = isDevMode 
+        ? migrationFiles 
+        : migrationFiles.filter((file) => !appliedMigrations.includes(file));
 
       if (pendingMigrations.length === 0) {
         botLog(
@@ -102,10 +114,17 @@ export class ModuleMigrationRunner {
         return;
       }
 
-      botLog(
-        "Core",
-        `Running ${pendingMigrations.length} migrations for module ${moduleCodeName}...`
-      );
+      if (isDevMode && appliedMigrations.length > 0) {
+        botLog(
+          "Core",
+          `DEVELOPMENT mode enabled - re-running all ${pendingMigrations.length} migrations for module ${moduleCodeName}...`
+        );
+      } else {
+        botLog(
+          "Core",
+          `Running ${pendingMigrations.length} migrations for module ${moduleCodeName}...`
+        );
+      }
 
       for (const migrationFile of pendingMigrations) {
         const migrationPath = path.join(migrationsPath, migrationFile);
